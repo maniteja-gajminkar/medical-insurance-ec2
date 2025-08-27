@@ -1,15 +1,12 @@
-on:
-  workflow_dispatch:   # manual run
-  push:
-    branches: [ main ]
-    paths:
-      - "train.py"
-      - "raw_data/**"
-      - "requirements.txt"
+name: Train and Log to MLflow
 
+on:
+  push:
+    branches: [ main ]      # run on every push to main
+  workflow_dispatch:         # allow manual run too
 
 permissions:
-  id-token: write      # needed for OIDC
+  id-token: write
   contents: read
 
 jobs:
@@ -41,6 +38,5 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
         run: python train.py
 
-      # Optional: list uploaded artifacts for sanity check
       - name: List artifacts in S3
         run: aws s3 ls s3://mlflow-artifacts-maniteja/ --recursive --human-readable --summarize
