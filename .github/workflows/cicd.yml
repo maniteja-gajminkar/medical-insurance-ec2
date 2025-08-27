@@ -1,9 +1,9 @@
-name: Train and Log to MLflow
+name: Train and Log to MLflow (Artifacts to S3)
 
 on:
   push:
-    branches: [ main ]      # run on every push to main
-  workflow_dispatch:         # allow manual run too
+    branches: [ main ]     # run on every commit to main
+  workflow_dispatch:        # allow manual runs
 
 permissions:
   id-token: write
@@ -24,19 +24,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install scikit-learn mlflow
+          # ensure these are present even if not listed
+          pip install scikit-learn mlflow boto3
 
-      - name: Configure AWS credentials via OIDC
+      - name: Assume AWS role via OIDC (for S3 access)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Train and log to MLflow
+      - name: Train and log (artifacts go to S3)
         env:
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          # DO NOT set MLFLOW_TRACKING_URI here (we're using local tracking with S3 artifacts)
           AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+          MLFLOW_HTTP_REQUEST_TIMEOUT: "10"
+          MLFLOW_HTTP_REQUEST_MAX_RETRIES: "1"
         run: python train.py
 
-      - name: List artifacts in S3
+      - name: List S3 artifacts (sanity check)
         run: aws s3 ls s3://mlflow-artifacts-maniteja/ --recursive --human-readable --summarize
