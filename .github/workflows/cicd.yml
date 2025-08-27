@@ -1,0 +1,46 @@
+on:
+  workflow_dispatch:   # manual run
+  push:
+    branches: [ main ]
+    paths:
+      - "train.py"
+      - "raw_data/**"
+      - "requirements.txt"
+
+
+permissions:
+  id-token: write      # needed for OIDC
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install scikit-learn mlflow
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Train and log to MLflow
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+        run: python train.py
+
+      # Optional: list uploaded artifacts for sanity check
+      - name: List artifacts in S3
+        run: aws s3 ls s3://mlflow-artifacts-maniteja/ --recursive --human-readable --summarize
