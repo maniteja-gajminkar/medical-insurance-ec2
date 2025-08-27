@@ -1,0 +1,10 @@
+artifact_location: file:///C:/Users/manit/Desktop/linkedin%20projects/medical-insurance-ec2/mlruns/598877345352406150/models/m-92fa876109cb48aba3ca7f52617edc17/artifacts
+creation_timestamp: 1756310046450
+experiment_id: '598877345352406150'
+last_updated_timestamp: 1756310055327
+model_id: m-92fa876109cb48aba3ca7f52617edc17
+model_type: null
+name: model
+source_run_id: d8fa9a889a50407498a59acfc25303e0
+status: 2
+status_message: null

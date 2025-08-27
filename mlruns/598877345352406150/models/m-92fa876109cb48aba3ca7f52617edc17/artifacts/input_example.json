@@ -1,0 +1,1 @@
+{"columns": ["age", "bmi", "children", "sex_male", "smoker_yes", "region_northwest", "region_southeast", "region_southwest"], "data": [[21, 36.85, 0, true, false, false, true, false], [38, 34.8, 2, false, false, false, false, true]]}

@@ -1,0 +1,38 @@
+artifact_path: file:///C:/Users/manit/Desktop/linkedin%20projects/medical-insurance-ec2/mlruns/598877345352406150/models/m-92fa876109cb48aba3ca7f52617edc17/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.12.7
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.1
+is_signature_from_type_hint: false
+mlflow_version: 3.3.2
+model_id: m-92fa876109cb48aba3ca7f52617edc17
+model_size_bytes: 1492
+model_uuid: m-92fa876109cb48aba3ca7f52617edc17
+prompts: null
+run_id: d8fa9a889a50407498a59acfc25303e0
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "long", "name": "age", "required": true}, {"type": "double",
+    "name": "bmi", "required": true}, {"type": "long", "name": "children", "required":
+    true}, {"type": "boolean", "name": "sex_male", "required": true}, {"type": "boolean",
+    "name": "smoker_yes", "required": true}, {"type": "boolean", "name": "region_northwest",
+    "required": true}, {"type": "boolean", "name": "region_southeast", "required":
+    true}, {"type": "boolean", "name": "region_southwest", "required": true}]'
+  outputs: '[{"type": "double", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2025-08-27 15:54:06.513007'

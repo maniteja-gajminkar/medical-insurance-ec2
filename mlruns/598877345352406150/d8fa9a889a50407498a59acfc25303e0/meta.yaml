@@ -1,0 +1,14 @@
+artifact_uri: file:///C:/Users/manit/Desktop/linkedin%20projects/medical-insurance-ec2/mlruns/598877345352406150/d8fa9a889a50407498a59acfc25303e0/artifacts
+end_time: 1756310055342
+entry_point_name: ''
+experiment_id: '598877345352406150'
+lifecycle_stage: active
+run_id: d8fa9a889a50407498a59acfc25303e0
+run_name: linear_regression_simple
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1756310046295
+status: 3
+tags: []
+user_id: manit
