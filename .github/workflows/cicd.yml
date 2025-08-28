@@ -13,30 +13,34 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+      REGION: ${{ secrets.AWS_REGION }}
+      ROLE: ${{ secrets.AWS_ROLE_TO_ASSUME }}
 
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.REGION }}
 
       - name: Debug EC2 Instance ID
-        run: echo "Targeting EC2: ${{ secrets.EC2_INSTANCE_ID }}"
+        run: echo "Targeting EC2 instance: $INSTANCE_ID"
 
       - name: Install Git & Clone Repo on EC2 via SSM
         run: |
-          echo '{
-            "commands": [
-              "echo == Install Git == && sudo yum install git -y",
-              "echo == Clone Repo == && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
-              "echo == List Files == && ls -la /home/ec2-user/medical-insurance-ec2"
-            ]
-          }' > clone-and-verify.json
-
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
-            --parameters file://clone-and-verify.json \
-            --region ${{ secrets.AWS_REGION }} \
-            --comment "Install Git and clone repo"
+            --instance-ids "$INSTANCE_ID" \
+            --region "$REGION" \
+            --comment "Install Git and clone repo" \
+            --parameters '{
+              "commands": [
+                "set -euxo pipefail",
+                "sudo yum install -y git",
+                "rm -rf /home/ec2-user/medical-insurance-ec2",
+                "git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+                "ls -la /home/ec2-user/medical-insurance-ec2"
+              ]
+            }'
