@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  ssm-ls-check:
+  ssm-ec2-check:
     runs-on: ubuntu-latest
     env:
       INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
@@ -34,7 +34,7 @@ jobs:
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
             --comment "List contents of /home/ec2-user" \
-            --parameters "commands=[ 'ls -la /home/ec2-user' ]" \
+            --parameters "commands=[\"ls -la /home/ec2-user\"]" \
             --query "Command.CommandId" \
             --output text)
 
@@ -61,18 +61,7 @@ jobs:
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
             --comment "Deploy medical insurance repo" \
-            --parameters '{ 
-              "commands": [
-                "set -euxo pipefail",
-                "REPO=https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
-                "DIR=/home/ec2-user/medical-insurance-ec2",
-                "if [ -d \"$DIR/.git\" ]; then",
-                "  cd \"$DIR\" && git pull --ff-only && ls -la",
-                "else",
-                "  git clone \"$REPO\" \"$DIR\" && ls -la \"$DIR\"",
-                "fi"
-              ] 
-            }' \
+            --parameters "commands=[\"set -euxo pipefail\", \"REPO=https://github.com/maniteja-gajminkar/medical-insurance-ec2.git\", \"DIR=/home/ec2-user/medical-insurance-ec2\", \"if [ -d \\\"$DIR/.git\\\" ]; then cd \\\"$DIR\\\" && git pull --ff-only && ls -la; else git clone \\\"$REPO\\\" \\\"$DIR\\\" && ls -la \\\"$DIR\\\"; fi\"]" \
             --query "Command.CommandId" \
             --output text)
 
