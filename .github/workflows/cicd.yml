@@ -38,9 +38,19 @@ jobs:
           }
           JSON
 
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --parameters file://clone-and-verify.json \
             --region "${{ secrets.AWS_REGION }}" \
-            --comment "Install Git and clone repo"
+            --comment "Install Git and clone repo" \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM CommandId: $CMD_ID"
+          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "${{ secrets.EC2_INSTANCE_ID }}" --region "${{ secrets.AWS_REGION }}"
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
+            --output json
