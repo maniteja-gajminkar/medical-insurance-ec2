@@ -1,4 +1,4 @@
-name: MLflow Training & Deployment
+name: Train, Log to S3, and Push to ECR
 
 on:
   push:
@@ -14,51 +14,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📦 Checkout repo
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: 🔐 Configure AWS credentials via OIDC
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
           role-session-name: github-actions-session
           aws-region: us-east-1
 
-      - name: 🐍 Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 📥 Install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🧠 Run training script
+      - name: Run training script
         run: python train.py
 
-      - name: ☁️ Upload model artifact to S3
+      - name: Upload artifact to S3
         run: |
           aws s3 cp ./artifacts/model.pkl s3://mlflow-artifacts-maniteja/artifacts/model.pkl
 
-  run-apps:
-    needs: train-and-upload
-    runs-on: ubuntu-latest
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
-    steps:
-      - name: 📦 Checkout repo
-        uses: actions/checkout@v4
+      - name: Build and tag Docker image
+        run: |
+          docker build -t mlfow-test-repo .
+          docker tag mlfow-test-repo:latest 274363548500.dkr.ecr.us-east-1.amazonaws.com/mlfow-test-repo:latest
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: 📥 Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: 🚀 Launch Streamlit dashboard
-        run: nohup streamlit run app.py --server.port 8501 &
-
-      - name: 🚀 Launch FastAPI service
-        run: nohup uvicorn serve_api:app --host 0.0.0.0 --port 8000 &
+      - name: Push Docker image to ECR
+        run: |
+          docker push 274363548500.dkr.ecr.us-east-1.amazonaws.com/mlfow-test-repo:latest
