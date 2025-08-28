@@ -19,5 +19,8 @@ jobs:
           role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
           aws-region: us-east-1
 
+      - name: Show AWS environment (optional debug)
+        run: env | grep AWS
+
       - name: Verify AWS identity
         run: aws sts get-caller-identity
