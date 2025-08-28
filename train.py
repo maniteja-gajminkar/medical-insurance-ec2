@@ -4,15 +4,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import sys
+import os
 
 # 🔧 MLflow setup
-MLFLOW_URI = "http://http://35.171.186.148/:5000"  # Replace with actual IP or use os.getenv("MLFLOW_URI")
+MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 mlflow.set_tracking_uri(MLFLOW_URI)
 mlflow.set_experiment("medical-insurance")
 
 try:
     print(f"📡 Connecting to MLflow at {MLFLOW_URI}")
-    
+
     # 📂 Load data
     df = pd.read_csv("raw_data/medical_insurance.csv")
     X = df.drop("charges", axis=1)
