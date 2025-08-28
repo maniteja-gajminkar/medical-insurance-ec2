@@ -1,4 +1,4 @@
-- name: 🧪 Test repo clone on EC2
+- name: Test repo clone on EC2
   env:
     INSTANCE_ID: i-0ebb50246a4b9c539
     REGION: ${{ secrets.AWS_REGION }}
