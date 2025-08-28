@@ -2,8 +2,7 @@ name: Deploy and Train
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -11,47 +10,92 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 🧾 Checkout repository
-      uses: actions/checkout@v3
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
 
-    - name: 🔐 Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: 🚀 Start MLflow server on EC2
-      run: |
-        aws ssm send-command \
-          --document-name "AWS-RunShellScript" \
-          --instance-ids i-0ebb50246a4b9c539 \
-          --comment "Start MLflow server" \
-          --parameters 'commands=[
-            "source /home/ec2-user/mlflow-venv/bin/activate",
-            "nohup /home/ec2-user/mlflow-venv/bin/mlflow server \
-              --backend-store-uri sqlite:///home/ec2-user/mlflow.db \
-              --default-artifact-root s3://mlflow-artifacts-maniteja \
-              --host 0.0.0.0 \
-              --port 5000 > /home/ec2-user/mlflow.log 2>&1 &"
-          ]' \
-          --region ${{ secrets.AWS_REGION }}
+      # Start MLflow on EC2 in the background (nohup) and leave it running
+      - name: ▶️ Start MLflow on EC2 (nohup via SSM)
+        env:
+          INSTANCE_ID: i-0ebb50246a4b9c539
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
+            --comment "Ensure MLflow server running" \
+            --parameters '{"commands":[
+              "set -euo pipefail",
+              "sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
+              "python3 -m pip install --upgrade pip >/dev/null 2>&1 || true",
+              "python3 -m pip show mlflow >/dev/null 2>&1 || python3 -m pip install mlflow >/dev/null 2>&1",
+              "if ss -lntp | grep -q \":5000\"; then echo \"MLflow already listening on :5000\"; else nohup $(command -v mlflow) server --backend-store-uri sqlite:////opt/mlflow/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /opt/mlflow/mlflow.log 2>&1 & sleep 2; fi",
+              "echo '--- MLflow log tail ---'; tail -n 80 /opt/mlflow/mlflow.log || true"
+            ]}' \
+            --region "${REGION}" >/dev/null
 
-    - name: 🔍 Check MLflow API health
-      run: |
-        curl --max-time 10 -sSf "http://35.171.186.148:5000/api/2.0/mlflow/experiments/list" || echo "⚠️ MLflow API not responding"
+      # Soft health check (warns if blocked by SG/firewall, but doesn't fail the job)
+      - name: 🔍 Health check MLflow (public UI)
+        run: |
+          echo "Checking MLflow UI http://35.171.186.148:5000 ..."
+          curl -sSf "http://35.171.186.148:5000" >/dev/null && echo "✅ UI reachable" || echo "⚠️ UI not reachable (may be SG/firewall). Proceeding..."
 
-    - name: 🧪 Trigger training on EC2 via SSM
-      run: |
-        aws ssm send-command \
-          --document-name "AWS-RunShellScript" \
-          --instance-ids i-0ebb50246a4b9c539 \
-          --comment "Run training script" \
-          --parameters 'commands=[
-            "source /home/ec2-user/mlflow-venv/bin/activate",
-            "pip install -r /home/ec2-user/medical-insurance-ec2/requirements.txt",
-            "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
-            "cd /home/ec2-user/medical-insurance-ec2",
-            "python3 train.py"
-          ]' \
-          --region ${{ secrets.AWS_REGION }}
+      # Trigger training on EC2 and wait; prints stdout/stderr
+      - name: 🚀 Trigger training on EC2 via SSM (wait & print logs)
+        env:
+          INSTANCE_ID: i-0ebb50246a4b9c539
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          TRACKING_URI="http://127.0.0.1:5000"
+
+          # Build the remote command list:
+          # 1) Ensure deps (requirements.txt if present, else explicit)
+          # 2) Export MLflow URI
+          # 3) Run training
+          PARAMS=$(
+            jq -cn --arg uri "$TRACKING_URI" '
+              {
+                commands: [
+                  "set -euo pipefail",
+                  "cd /home/ec2-user/medical-insurance-ec2",
+                  "[ -f requirements.txt ] && python3 -m pip install -r requirements.txt || python3 -m pip install pandas scikit-learn mlflow",
+                  "export MLFLOW_TRACKING_URI=\($uri)",
+                  "python3 train.py"
+                ]
+              }
+            '
+          )
+
+          CMD_ID=$(aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
+            --comment "Trigger MLflow training" \
+            --parameters "$PARAMS" \
+            --region "${REGION}" \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM CommandId: $CMD_ID"
+
+          # Wait for completion with a simple loop
+          for i in {1..60}; do
+            STATUS=$(aws ssm list-command-invocations --command-id "$CMD_ID" --details \
+              --query "CommandInvocations[0].Status" --output text --region "${REGION}" || true)
+            echo "Status: $STATUS"
+            [[ "$STATUS" == "Success" || "$STATUS" == "Cancelled" || "$STATUS" == "Failed" || "$STATUS" == "TimedOut" ]] && break
+            sleep 5
+          done
+
+          echo "----- STDOUT / STDERR from instance -----"
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "${REGION}" \
+            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
+            --output json

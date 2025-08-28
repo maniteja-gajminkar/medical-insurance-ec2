@@ -1,30 +1,76 @@
-import mlflow
 import os
+import sys
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
-import joblib
+from mlflow.models.signature import infer_signature
 
-# Set MLflow tracking URI
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
-mlflow.set_experiment("medical-insurance")
+# -------------------------------------------------------------------
+# Config
+# -------------------------------------------------------------------
+MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+EXPERIMENT_NAME = "medical-insurance"
+DATA_PATH = "raw_data/medical_insurance.csv"
 
-# Dummy training logic
-df = pd.read_csv("insurance.csv")
-X = df[["age", "bmi", "children"]]
+# -------------------------------------------------------------------
+# Setup MLflow
+# -------------------------------------------------------------------
+mlflow.set_tracking_uri(MLFLOW_URI)
+mlflow.set_experiment(EXPERIMENT_NAME)
+print("📡 Tracking URI:", mlflow.get_tracking_uri())
+print("🔬 Experiment:", EXPERIMENT_NAME)
+
+# -------------------------------------------------------------------
+# Load data
+# -------------------------------------------------------------------
+if not os.path.exists(DATA_PATH):
+    print(f"❌ Missing dataset at {DATA_PATH}", file=sys.stderr)
+    sys.exit(1)
+
+df = pd.read_csv(DATA_PATH)
+if "charges" not in df.columns:
+    print("❌ 'charges' column not found in dataset.", file=sys.stderr)
+    sys.exit(1)
+
+# -------------------------------------------------------------------
+# Preprocess
+# -------------------------------------------------------------------
+X = pd.get_dummies(df.drop("charges", axis=1), drop_first=True)
 y = df["charges"]
 
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# -------------------------------------------------------------------
+# Train
+# -------------------------------------------------------------------
 model = LinearRegression()
-model.fit(X, y)
-preds = model.predict(X)
-mse = mean_squared_error(y, preds)
+model.fit(X_train, y_train)
 
-# Save model
-joblib.dump(model, "model.pkl")
+# -------------------------------------------------------------------
+# Evaluate
+# -------------------------------------------------------------------
+preds = model.predict(X_test)
+rmse = mean_squared_error(y_test, preds, squared=False)
+signature = infer_signature(X_test, preds)
 
+# -------------------------------------------------------------------
 # Log to MLflow
+# -------------------------------------------------------------------
 with mlflow.start_run():
+    mlflow.set_tags({
+        "project": "medical-insurance",
+        "developer": "maniteja",
+        "model_type": "LinearRegression",
+    })
     mlflow.log_param("model_type", "LinearRegression")
-    mlflow.log_metric("mse", mse)
-    mlflow.log_artifact("model.pkl")
-    mlflow.log_artifact("insurance.csv")
+    mlflow.log_metric("rmse", rmse)
+    mlflow.log_artifact(DATA_PATH)
+    mlflow.sklearn.log_model(model, artifact_path="model", signature=signature)
+
+print(f"✅ Training complete. RMSE: {rmse:.2f}")
+print("🔗 MLflow UI:", MLFLOW_URI)
