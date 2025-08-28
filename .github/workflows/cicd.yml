@@ -26,17 +26,21 @@ jobs:
 
       - name: Install Git & Clone Repo on EC2 via SSM
         run: |
-          echo '{
+          cat > clone-and-verify.json <<'JSON'
+          {
             "commands": [
-              "echo == Install Git == && sudo yum install git -y",
-              "echo == Clone Repo == && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
-              "echo == List Files == && ls -la /home/ec2-user/medical-insurance-ec2"
+              "set -euxo pipefail",
+              "echo '== Install Git ==' && sudo yum install -y git",
+              "echo '== Clean old repo ==' && rm -rf /home/ec2-user/medical-insurance-ec2",
+              "echo '== Clone Repo ==' && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+              "echo '== List Files ==' && ls -la /home/ec2-user/medical-insurance-ec2"
             ]
-          }' > clone-and-verify.json
+          }
+          JSON
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --parameters file://clone-and-verify.json \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "${{ secrets.AWS_REGION }}" \
             --comment "Install Git and clone repo"
