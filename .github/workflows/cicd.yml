@@ -1,45 +1,42 @@
-name: Train and Log to MLflow
+name: Train and Log to S3
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  train-model:
+  train-and-upload:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
+          role-session-name: github-actions-session
           aws-region: us-east-1
 
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Create virtual environment and install dependencies
+      - name: Install dependencies
         run: |
-          python -m venv venv
-          ./venv/bin/pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run training and log to MLflow
-        env:
-          MLFLOW_TRACKING_URI: http://35.171.186.148:5000
+      - name: Run training script
+        run: python train.py
+
+      - name: Upload artifact to S3
         run: |
-          ./venv/bin/python train.py
-
-      - name: Verify AWS identity (optional debug)
-        run: aws sts get-caller-identity
+          aws s3 cp ./artifacts/model.pkl s3://mlflow-artifacts-maniteja/artifacts/model.pkl
