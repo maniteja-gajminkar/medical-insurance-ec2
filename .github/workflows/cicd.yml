@@ -1,87 +1,33 @@
-name: Deploy and Train
+- name: 🧪 Test repo clone on EC2
+  env:
+    INSTANCE_ID: i-0ebb50246a4b9c539
+    REGION: ${{ secrets.AWS_REGION }}
+  run: |
+    cat > test-clone.json <<'JSON'
+    {
+      "commands": [
+        "echo '== prepare workspace ==' ; mkdir -p /home/ec2-user && cd /home/ec2-user",
+        "echo '== clone fresh repo ==' ; rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
+        "cd medical-insurance-ec2",
+        "echo '== list files ==' ; ls -la"
+      ]
+    }
+    JSON
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+    CMD_ID=$(aws ssm send-command \
+      --document-name "AWS-RunShellScript" \
+      --instance-ids "${INSTANCE_ID}" \
+      --comment "Test repo clone and file listing" \
+      --parameters file://test-clone.json \
+      --region "${REGION}" \
+      --query "Command.CommandId" --output text)
 
-jobs:
-  deploy-and-train:
-    runs-on: ubuntu-latest
+    echo "SSM CommandId: $CMD_ID"
+    aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --region "${REGION}"
 
-    steps:
-      - name: 🧾 Checkout repository
-        uses: actions/checkout@v4
-
-      - name: 🔐 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: ▶️ Start MLflow on EC2 (via SSM, using repo requirements)
-        env:
-          INSTANCE_ID: i-0ebb50246a4b9c539
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          cat > start-mlflow.json <<'JSON'
-          {
-            "commands": [
-              "echo '== prepare workspace ==' ; mkdir -p /home/ec2-user && cd /home/ec2-user",
-              "echo '== clone fresh repo ==' ; rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
-              "cd medical-insurance-ec2",
-              "echo '== install dependencies ==' ; python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt",
-              "echo '== start MLflow ==' ; sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
-              "if ss -lntp | grep -q \":5000\"; then echo MLflow already running; else nohup $(command -v mlflow) server --backend-store-uri sqlite:////opt/mlflow/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /opt/mlflow/mlflow.log 2>&1 & sleep 2; fi",
-              "tail -n 40 /opt/mlflow/mlflow.log || true"
-            ]
-          }
-          JSON
-
-          aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "${INSTANCE_ID}" \
-            --comment "Start MLflow using repo requirements" \
-            --parameters file://start-mlflow.json \
-            --region "${REGION}" >/dev/null
-
-      - name: 🔍 Health check MLflow (public UI)
-        run: |
-          echo "Checking MLflow UI http://35.171.186.148:5000 ..."
-          curl -sSf "http://35.171.186.148:5000" >/dev/null && echo "✅ UI reachable" || echo "⚠️ UI not reachable (maybe SG/firewall). Proceeding..."
-
-      - name: 🚀 Trigger training on EC2 via SSM (clone + train)
-        env:
-          INSTANCE_ID: i-0ebb50246a4b9c539
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          cat > run-train.json <<'JSON'
-          {
-            "commands": [
-              "echo '== prepare workspace ==' ; mkdir -p /home/ec2-user && cd /home/ec2-user",
-              "echo '== clone fresh repo ==' ; rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
-              "cd medical-insurance-ec2",
-              "echo '== install dependencies ==' ; python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt",
-              "echo '== run training ==' ; export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 ; python3 train.py | tee /home/ec2-user/train.log"
-            ]
-          }
-          JSON
-
-          CMD_ID=$(aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "${INSTANCE_ID}" \
-            --comment "Run training using repo code" \
-            --parameters file://run-train.json \
-            --region "${REGION}" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM CommandId: $CMD_ID"
-          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --region "${REGION}"
-
-          echo "----- Training output -----"
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "${REGION}" \
-            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' --output json
+    echo "----- Repo contents -----"
+    aws ssm get-command-invocation \
+      --command-id "$CMD_ID" \
+      --instance-id "$INSTANCE_ID" \
+      --region "${REGION}" \
+      --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' --output json
