@@ -92,3 +92,42 @@ jobs:
             --region "$REGION" \
             --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
             --output json
+
+      - name: Install requirements and train model via SSM
+        run: |
+          echo "Installing dependencies and training model on instance: $INSTANCE_ID"
+
+          CMD_ID=$(aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --instance-ids "$INSTANCE_ID" \
+            --region "$REGION" \
+            --comment "Install requirements and train ML model" \
+            --parameters '{
+              "commands": [
+                "set -euxo pipefail",
+                "echo \"::step:: Activating virtualenv...\"",
+                "source /home/ec2-user/mlflow-venv/bin/activate",
+                "echo \"::step:: Installing requirements...\"",
+                "pip install --upgrade pip",
+                "pip install -r /home/ec2-user/medical-insurance-ec2/requirements.txt",
+                "echo \"::step:: Running training script...\"",
+                "python /home/ec2-user/medical-insurance-ec2/train.py"
+              ]
+            }' \
+            --timeout-seconds 180 \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Command ID: $CMD_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$REGION" || echo "Training step timed out or failed"
+
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$REGION" \
+            --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
+            --output json

@@ -1,55 +1,30 @@
-import os
-import sys
 import mlflow
 import mlflow.sklearn
-import pandas as pd
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from mlflow.models.signature import infer_signature
+import pandas as pd
+import pickle
+import os
 
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
-EXPERIMENT_NAME = "medical-insurance"
-DATA_PATH = "raw_data/medical_insurance.csv"
+# ✅ Set MLflow tracking URI to your S3 bucket
+mlflow.set_tracking_uri("s3://mlflow-artifacts-maniteja")
+mlflow.set_experiment("medical-insurance")
 
-mlflow.set_tracking_uri(MLFLOW_URI)
-mlflow.set_experiment(EXPERIMENT_NAME)
-print("📡 Tracking URI:", mlflow.get_tracking_uri())
-print("🔬 Experiment:", EXPERIMENT_NAME)
+# 🧠 Dummy training data
+X = pd.DataFrame({'age': [25, 32, 47], 'bmi': [22.5, 28.1, 31.2]})
+y = pd.Series([2500, 3200, 4100])
 
-if not os.path.exists(DATA_PATH):
-    print(f"❌ Missing dataset at {DATA_PATH}", file=sys.stderr)
-    sys.exit(1)
-
-df = pd.read_csv(DATA_PATH)
-if "charges" not in df.columns:
-    print("❌ 'charges' column not found in dataset.", file=sys.stderr)
-    sys.exit(1)
-
-X = pd.get_dummies(df.drop("charges", axis=1), drop_first=True)
-y = df["charges"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
+# 🚀 Train model
 model = LinearRegression()
-model.fit(X_train, y_train)
+model.fit(X, y)
 
-preds = model.predict(X_test)
-rmse = mean_squared_error(y_test, preds, squared=False)
-signature = infer_signature(X_test, preds)
+# 💾 Save model locally
+model_path = "model.pkl"
+with open(model_path, "wb") as f:
+    pickle.dump(model, f)
 
+# 📦 Log to MLflow
 with mlflow.start_run():
-    mlflow.set_tags({
-        "project": "medical-insurance",
-        "developer": "maniteja",
-        "model_type": "LinearRegression",
-    })
-    mlflow.log_param("model_type", "LinearRegression")
-    mlflow.log_metric("rmse", rmse)
-    mlflow.log_artifact(DATA_PATH)
-    mlflow.sklearn.log_model(model, artifact_path="model", signature=signature)
+    mlflow.log_artifact(model_path)
+    mlflow.sklearn.log_model(model, artifact_path="sklearn-model")
 
-print(f"✅ Training complete. RMSE: {rmse:.2f}")
-print("🔗 MLflow UI:", MLFLOW_URI)
+print(f"✅ Model trained and logged to S3 via MLflow. Local path: {os.path.abspath(model_path)}")
