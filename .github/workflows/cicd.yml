@@ -28,11 +28,9 @@ jobs:
       - name: Debug EC2 Instance ID
         run: echo "Targeting EC2 instance: $INSTANCE_ID"
 
-      - name: Install Git & Clone Repo on EC2 via SSM
+      - name: Write SSM command payload to file
         run: |
-          # Write parameters to JSON file (avoids YAML parse errors)
-          cat > commands.json <<'JSON'
-          {
+          echo '{
             "commands": [
               "set -euxo pipefail",
               "sudo yum install -y git",
@@ -40,16 +38,16 @@ jobs:
               "git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
               "ls -la /home/ec2-user/medical-insurance-ec2"
             ]
-          }
-          JSON
+          }' > ssm-command.json
 
-          # Execute SSM command using the JSON file
+      - name: Send SSM command and wait for result
+        run: |
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
             --comment "Install Git and clone repo" \
-            --parameters file://commands.json \
+            --parameters file://ssm-command.json \
             --query "Command.CommandId" --output text)
 
           echo "SSM CommandId: $CMD_ID"
