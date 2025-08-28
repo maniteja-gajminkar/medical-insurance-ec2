@@ -19,6 +19,8 @@ jobs:
           role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
           aws-region: us-east-1
 
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
