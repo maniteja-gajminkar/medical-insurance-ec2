@@ -5,4 +5,5 @@ mlflow
 streamlit
 requests
 fastapi
+boto3
 uvicorn
