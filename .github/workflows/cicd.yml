@@ -123,4 +123,6 @@ jobs:
           python train.py
 
       - name: Show MLflow URL
-        run: echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
+        #run: echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
+        run: 'echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"'
+
