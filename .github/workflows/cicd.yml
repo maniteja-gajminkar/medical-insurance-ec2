@@ -20,7 +20,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Start MLflow on EC2 in the background (nohup) and leave it running
+      # Build SSM parameters JSON for starting MLflow without jq/apt
+      - name: 🧱 Prepare SSM params (start MLflow)
+        run: |
+          cat > start-mlflow.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
+              "python3 -m pip install --upgrade pip >/dev/null 2>&1 || true",
+              "python3 -m pip show mlflow >/dev/null 2>&1 || python3 -m pip install mlflow >/dev/null 2>&1",
+              "if ss -lntp | grep -q \":5000\"; then echo MLflow already listening on :5000; else nohup $(command -v mlflow) server --backend-store-uri sqlite:////opt/mlflow/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /opt/mlflow/mlflow.log 2>&1 & sleep 2; fi",
+              "echo MLflow log tail:",
+              "tail -n 80 /opt/mlflow/mlflow.log || true"
+            ]
+          }
+          JSON
+
       - name: ▶️ Start MLflow on EC2 (nohup via SSM)
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
@@ -30,65 +46,55 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
             --comment "Ensure MLflow server running" \
-            --parameters '{"commands":[
-              "set -euo pipefail",
-              "sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
-              "python3 -m pip install --upgrade pip >/dev/null 2>&1 || true",
-              "python3 -m pip show mlflow >/dev/null 2>&1 || python3 -m pip install mlflow >/dev/null 2>&1",
-              "if ss -lntp | grep -q \":5000\"; then echo \"MLflow already listening on :5000\"; else nohup $(command -v mlflow) server --backend-store-uri sqlite:////opt/mlflow/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /opt/mlflow/mlflow.log 2>&1 & sleep 2; fi",
-              "echo '--- MLflow log tail ---'; tail -n 80 /opt/mlflow/mlflow.log || true"
-            ]}' \
+            --parameters file://start-mlflow.json \
             --region "${REGION}" >/dev/null
 
-      # Soft health check (warns if blocked by SG/firewall, but doesn't fail the job)
+      # Public UI check is optional; won't fail the job if SG blocks it
       - name: 🔍 Health check MLflow (public UI)
         run: |
           echo "Checking MLflow UI http://35.171.186.148:5000 ..."
-          curl -sSf "http://35.171.186.148:5000" >/dev/null && echo "✅ UI reachable" || echo "⚠️ UI not reachable (may be SG/firewall). Proceeding..."
+          curl -sSf "http://35.171.186.148:5000" >/dev/null && echo "✅ UI reachable" || echo "⚠️ UI not reachable (maybe SG/firewall). Proceeding..."
 
-      # Trigger training on EC2 and wait; prints stdout/stderr
+      # Build SSM parameters JSON for training without jq/apt
+      - name: 🧱 Prepare SSM params (train)
+        run: |
+          cat > run-train.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "cd /home/ec2-user/medical-insurance-ec2",
+              "[ -f requirements.txt ] && python3 -m pip install -r requirements.txt || python3 -m pip install pandas scikit-learn mlflow",
+              "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
+              "python3 train.py"
+            ]
+          }
+          JSON
+
       - name: 🚀 Trigger training on EC2 via SSM (wait & print logs)
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
-          TRACKING_URI="http://127.0.0.1:5000"
-
-          # Build the remote command list:
-          # 1) Ensure deps (requirements.txt if present, else explicit)
-          # 2) Export MLflow URI
-          # 3) Run training
-          PARAMS=$(
-            jq -cn --arg uri "$TRACKING_URI" '
-              {
-                commands: [
-                  "set -euo pipefail",
-                  "cd /home/ec2-user/medical-insurance-ec2",
-                  "[ -f requirements.txt ] && python3 -m pip install -r requirements.txt || python3 -m pip install pandas scikit-learn mlflow",
-                  "export MLFLOW_TRACKING_URI=\($uri)",
-                  "python3 train.py"
-                ]
-              }
-            '
-          )
 
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
             --comment "Trigger MLflow training" \
-            --parameters "$PARAMS" \
+            --parameters file://run-train.json \
             --region "${REGION}" \
             --query "Command.CommandId" --output text)
 
           echo "SSM CommandId: $CMD_ID"
 
-          # Wait for completion with a simple loop
+          # Wait for completion
           for i in {1..60}; do
             STATUS=$(aws ssm list-command-invocations --command-id "$CMD_ID" --details \
               --query "CommandInvocations[0].Status" --output text --region "${REGION}" || true)
             echo "Status: $STATUS"
-            [[ "$STATUS" == "Success" || "$STATUS" == "Cancelled" || "$STATUS" == "Failed" || "$STATUS" == "TimedOut" ]] && break
+            case "$STATUS" in
+              Success|Cancelled|Failed|TimedOut) break ;;
+            esac
             sleep 5
           done
 
