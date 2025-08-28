@@ -26,7 +26,6 @@ jobs:
           python -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-        working-directory: medical-insurance-ec2
 
       - name: Run training and log to MLflow
         env:
@@ -34,4 +33,3 @@ jobs:
         run: |
           source venv/bin/activate
           python train.py
-        working-directory: .
