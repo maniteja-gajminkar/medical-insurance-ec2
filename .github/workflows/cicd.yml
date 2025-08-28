@@ -70,17 +70,35 @@ jobs:
           }
           JSON
 
-      - name: 🚀 Trigger training on EC2 via SSM (wait & print logs)
+      - name: 🚀 Trigger training on EC2 via SSM (wait & print logs, self-healing)
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
+          REPO_URL: https://github.com/maniteja-gajminkar/medical-insurance-ec2.git
+          REPO_DIR: /home/ec2-user/medical-insurance-ec2
         run: |
           set -euo pipefail
+
+          cat > run-train.json <<'JSON'
+          {
+            "commands": [
+              "set -euxo pipefail",
+              "echo '== whoami / python =='; whoami; command -v python3 || true; python3 --version || true",
+              "echo '== ensure git ==' ; sudo yum -y install git || true",
+              "echo '== ensure repo exists ==' ; if [ ! -d /home/ec2-user/medical-insurance-ec2/.git ]; then git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2; else cd /home/ec2-user/medical-insurance-ec2 && git pull --ff-only; fi",
+              "echo '== list repo ==' ; ls -la /home/ec2-user/medical-insurance-ec2 || true",
+              "echo '== ensure deps ==' ; cd /home/ec2-user/medical-insurance-ec2 ; if [ -f requirements.txt ]; then python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt; else python3 -m pip install --upgrade pip && python3 -m pip install pandas scikit-learn mlflow; fi",
+              "echo '== check mlflow server API ==' ; curl -sSf http://127.0.0.1:5000/api/2.0/mlflow/experiments/list >/dev/null",
+              "echo '== run training ==' ; export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 ; cd /home/ec2-user/medical-insurance-ec2 ; python3 train.py | tee -a train.log",
+              "echo '== train exit code ==' ; echo $?"
+            ]
+          }
+          JSON
 
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
-            --comment "Trigger MLflow training" \
+            --comment "Trigger MLflow training (verbose)" \
             --parameters file://run-train.json \
             --region "${REGION}" \
             --query "Command.CommandId" --output text)
