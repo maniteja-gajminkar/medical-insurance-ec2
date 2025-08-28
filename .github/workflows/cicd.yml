@@ -124,5 +124,5 @@ jobs:
 
       - name: Show MLflow URL
         #run: echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
-        run: 'echo "Open MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"'
+        run: 'echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"'
 
