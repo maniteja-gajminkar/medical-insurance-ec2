@@ -26,40 +26,17 @@ jobs:
 
       - name: Install Git & Clone Repo on EC2 via SSM
         run: |
-          # Create the SSM JSON parameters file
-          cat > clone-and-verify.json <<'JSON'
-          {
+          echo '{
             "commands": [
-              "set -euxo pipefail",
-              "echo '== Install Git ==' && sudo yum install -y git",
-              "echo '== Clean old repo ==' && rm -rf /home/ec2-user/medical-insurance-ec2",
-              "echo '== Clone Repo ==' && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
-              "echo '== List Files ==' && ls -la /home/ec2-user/medical-insurance-ec2"
+              "echo == Install Git == && sudo yum install git -y",
+              "echo == Clone Repo == && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+              "echo == List Files == && ls -la /home/ec2-user/medical-insurance-ec2"
             ]
-          }
-          JSON
+          }' > clone-and-verify.json
 
-          # Send SSM command
-          CMD_ID=$(aws ssm send-command \
+          aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --parameters file://clone-and-verify.json \
-            --region "${{ secrets.AWS_REGION }}" \
-            --comment "Install Git and clone repo" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM CommandId: $CMD_ID"
-
-          # Wait for command to complete
-          aws ssm wait command-executed \
-            --command-id "$CMD_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-            --region "${{ secrets.AWS_REGION }}"
-
-          # Get detailed output
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
-            --output json
+            --region ${{ secrets.AWS_REGION }} \
+            --comment "Install Git and clone repo"
