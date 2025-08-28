@@ -1,59 +1,43 @@
-import os
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import mlflow
-import mlflow.sklearn
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import sys
 
-# Read MLflow URI from env (set by the workflow), fallback for local tests
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
-print("Using MLflow URI:", MLFLOW_URI)
-
+# 🔧 MLflow setup
+MLFLOW_URI = "http://http://35.171.186.148/:5000"  # Replace with actual IP or use os.getenv("MLFLOW_URI")
 mlflow.set_tracking_uri(MLFLOW_URI)
-mlflow.set_experiment("medical_insurance")
+mlflow.set_experiment("medical-insurance")
 
-# Load dataset
-df = pd.read_csv("raw_data/medical_insurance.csv")
-target_col = "charges"
-feature_cols = ["age", "sex", "bmi", "children", "smoker", "region"]
+try:
+    print(f"📡 Connecting to MLflow at {MLFLOW_URI}")
+    
+    # 📂 Load data
+    df = pd.read_csv("raw_data/medical_insurance.csv")
+    X = df.drop("charges", axis=1)
+    y = df["charges"]
 
-X = pd.get_dummies(df[feature_cols], columns=["sex", "smoker", "region"], drop_first=True)
-y = df[target_col].astype(float)
+    # 🧪 Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # 🧠 Model training
+    model = LinearRegression()
+    model.fit(X_train, y_train)
 
-# Train
-model = LinearRegression().fit(X_train, y_train)
-y_pred = model.predict(X_test)
+    # 📊 Evaluation
+    predictions = model.predict(X_test)
+    rmse = mean_squared_error(y_test, predictions, squared=False)
 
-# Metrics
-mae = mean_absolute_error(y_test, y_pred)
-rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-r2 = r2_score(y_test, y_pred)
+    # 📝 MLflow logging
+    with mlflow.start_run():
+        mlflow.log_param("model_type", "LinearRegression")
+        mlflow.log_metric("rmse", rmse)
+        mlflow.log_artifact("raw_data/medical_insurance.csv")
+        mlflow.sklearn.log_model(model, "model")
+        print(f"✅ Training complete. RMSE: {rmse:.2f}")
+        print("🔗 View run in MLflow UI:", MLFLOW_URI)
 
-print("=== Results ===")
-print(f"MAE : {mae:.3f}")
-print(f"RMSE: {rmse:.3f}")
-print(f"R2  : {r2:.4f}")
-
-# Log to MLflow
-with mlflow.start_run(run_name="linear_regression"):
-    mlflow.log_params({
-        "model": "LinearRegression",
-        "test_size": 0.2,
-        "random_state": 42
-    })
-    mlflow.log_metrics({
-        "MAE": mae,
-        "RMSE": rmse,
-        "R2": r2
-    })
-    mlflow.sklearn.log_model(
-        sk_model=model,
-        name="model",
-        input_example=X_train.head(2),
-    )
-
-print("✅ Training run complete. Check MLflow UI at:", MLFLOW_URI)
+except Exception as e:
+    print("❌ Training failed:", str(e))
+    sys.exit(1)

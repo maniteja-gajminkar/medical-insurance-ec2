@@ -1,117 +1,49 @@
-name: Bootstrap MLflow on existing EC2 and Train
+name: Deploy and Train
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
-
-permissions:
-  id-token: write
-  contents: read
-
-env:
-  AWS_REGION: us-east-1
-  INSTANCE_ID: i-0ebb50246a4b9c539
-  BUCKET_NAME: mlflow-artifacts-maniteja
-  MLFLOW_PORT: "5000"
+    branches:
+      - main
 
 jobs:
-  bootstrap-and-train:
+  deploy-and-train:
     runs-on: ubuntu-latest
+    env:
+      MLFLOW_PORT: 5000
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: gha-mlflow-ssm-${{ github.run_id }}
-
-      - name: Build SSM parameter JSON (idempotent bootstrap)
-        run: |
-          cat > commands.json <<EOF
-          {
-            "commands": [
-              "set -euo pipefail",
-              "sudo yum update -y",
-              "sudo yum install -y python3 python3-pip awscli",
-              "if [ ! -d /home/ec2-user/mlflow-venv ]; then sudo -u ec2-user python3 -m venv /home/ec2-user/mlflow-venv; fi",
-              "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install --upgrade pip setuptools wheel",
-              "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install mlflow boto3",
-              "sudo mkdir -p /home/ec2-user/mlflow",
-              "sudo chown ec2-user:ec2-user /home/ec2-user/mlflow",
-              "if [ ! -f /etc/systemd/system/mlflow.service ]; then sudo bash -lc 'cat >/etc/systemd/system/mlflow.service <<EOL\n[Unit]\nDescription=MLflow Tracking Server\nAfter=network.target\n\n[Service]\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/mlflow\nExecStart=/home/ec2-user/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://${{ env.BUCKET_NAME }} --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }}\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOL'; sudo systemctl daemon-reload; sudo systemctl enable mlflow; fi",
-              "sudo systemctl restart mlflow",
-              "sudo systemctl status mlflow --no-pager || true"
-            ]
-          }
-          EOF
-
-      - name: Send SSM command to EC2
-        id: ssm
-        run: |
-          CMD_ID=$(aws ssm send-command \
-            --region "${{ env.AWS_REGION }}" \
-            --instance-ids "${{ env.INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters file://commands.json \
-            --query "Command.CommandId" --output text)
-          echo "cmd_id=$CMD_ID" >> $GITHUB_OUTPUT
-
-      - name: Wait for SSM command completion
-        run: |
-          CMD_ID="${{ steps.ssm.outputs.cmd_id }}"
-          for i in {1..60}; do
-            STATUS=$(aws ssm list-command-invocations --region "${{ env.AWS_REGION }}" \
-              --command-id "$CMD_ID" --details \
-              --query "CommandInvocations[0].Status" --output text)
-            echo "SSM status: $STATUS"
-            if [ "$STATUS" = "Success" ]; then exit 0; fi
-            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              aws ssm list-command-invocations --region "${{ env.AWS_REGION }}" --command-id "$CMD_ID" --details
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "SSM command timed out"; exit 1
-
-      - name: Discover MLflow public IP
-        id: ip
-        run: |
-          IP=$(aws ec2 describe-instances --region "${{ env.AWS_REGION }}" \
-            --instance-ids "${{ env.INSTANCE_ID }}" \
-            --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
-          echo "ip=$IP" >> $GITHUB_OUTPUT
-          echo "MLFLOW_TRACKING_URI=http://$IP:${{ env.MLFLOW_PORT }}" >> $GITHUB_ENV
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install mlflow pandas scikit-learn
 
-      - name: Train and log to MLflow
-        env:
-          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+      - name: Get EC2 IP via SSM
+        id: ip
         run: |
-          echo "Using MLflow at $MLFLOW_TRACKING_URI"
-          python train.py
+          INSTANCE_ID=$(aws ssm describe-instance-information --query "InstanceInformationList[0].InstanceId" --output text)
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+          echo "ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
 
-      - name: Show MLflow URL
+      - name: Check MLflow health
         run: |
-          echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
+          echo "🔍 Checking MLflow server at ${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
+          curl -sSf "http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}/" || echo "⚠️ MLflow server not responding"
+
+      - name: Train and log to MLflow via SSM
+        run: |
+          echo "🚀 Triggering training on EC2 via SSM"
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=${{ steps.ip.outputs.ip }}" \
+            --parameters 'commands=["cd /home/ec2-user/medical-insurance-ec2 && python3 train.py"]' \
+            --comment "Trigger MLflow training" \
+            --output text
