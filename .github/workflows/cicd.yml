@@ -34,4 +34,4 @@ jobs:
         run: |
           source venv/bin/activate
           python train.py
-        working-directory: medical-insurance-ec2
+        working-directory: medical-insurance-ec2/medical-insurance-ec2
