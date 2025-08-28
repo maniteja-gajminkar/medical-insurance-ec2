@@ -28,11 +28,26 @@ jobs:
       - name: Debug EC2 Instance ID
         run: echo "Targeting EC2 instance: $INSTANCE_ID"
 
-      - name: Install Git on EC2 via SSM
+      - name: Check /home/ec2-user on EC2 via SSM
         run: |
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
-            --comment "Install git on EC2" \
-            --parameters commands="sudo yum install -y git"
+            --comment "List /home/ec2-user" \
+            --parameters commands="cd /home/ec2-user && ls -la" \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM CommandId: $CMD_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$REGION"
+
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$REGION" \
+            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
+            --output json
