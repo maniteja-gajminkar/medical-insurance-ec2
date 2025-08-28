@@ -1,19 +1,22 @@
-name: check cli access to s3 bucket
+name: train-and-log-to-s3
+
 on:
-  workflow_dispatch:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  verify-aws:
+  train:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
+      # --- AWS OIDC Auth (short-lived creds, no secrets needed) ---
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -21,8 +24,27 @@ jobs:
           role-session-name: github-actions-${{ github.run_id }}
           aws-region: us-east-1
 
-      - name: Verify caller identity
-        run: aws sts get-caller-identity
+      # --- Python setup ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Check bucket access
-        run: aws s3 ls s3://mlflow-artifacts-maniteja
+      # --- Cache pip dependencies ---
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # --- Install dependencies ---
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # --- Train + log artifacts to S3 via MLflow ---
+      - name: Train and log with MLflow
+        run: python train.py
