@@ -1,6 +1,5 @@
 name: Deploy and Train
 
-# 🔁 Trigger this workflow when code is pushed to 'main' branch or manually from GitHub UI
 on:
   push:
     branches: [ main ]
@@ -8,14 +7,12 @@ on:
 
 jobs:
   deploy-and-train:
-    runs-on: ubuntu-latest  # 🖥️ GitHub-hosted runner
+    runs-on: ubuntu-latest
 
     steps:
-      # ✅ Step 1: Checkout your code from GitHub repo
       - name: 🧾 Checkout repository
         uses: actions/checkout@v4
 
-      # 🔐 Step 2: Set up AWS credentials so GitHub can talk to AWS
       - name: 🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -23,8 +20,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # ▶️ Step 3: Start MLflow server on EC2 (if not already running)
-      - name: ▶️ Start MLflow on EC2 (nohup via SSM)
+      - name: ▶️ Start MLflow on EC2 (via SSM, using repo requirements)
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
@@ -32,10 +28,11 @@ jobs:
           cat > start-mlflow.json <<'JSON'
           {
             "commands": [
-              "set -euo pipefail",
-              "sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
-              "python3 -m pip install --upgrade pip >/dev/null 2>&1 || true",
-              "python3 -m pip show mlflow >/dev/null 2>&1 || python3 -m pip install mlflow >/dev/null 2>&1",
+              "echo '== prepare workspace ==' ; mkdir -p /home/ec2-user && cd /home/ec2-user",
+              "echo '== clone fresh repo ==' ; rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
+              "cd medical-insurance-ec2",
+              "echo '== install dependencies ==' ; python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt",
+              "echo '== start MLflow ==' ; sudo mkdir -p /opt/mlflow && sudo chown ec2-user:ec2-user /opt/mlflow",
               "if ss -lntp | grep -q \":5000\"; then echo MLflow already running; else nohup $(command -v mlflow) server --backend-store-uri sqlite:////opt/mlflow/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /opt/mlflow/mlflow.log 2>&1 & sleep 2; fi",
               "tail -n 40 /opt/mlflow/mlflow.log || true"
             ]
@@ -45,34 +42,27 @@ jobs:
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "${INSTANCE_ID}" \
-            --comment "Ensure MLflow server running" \
+            --comment "Start MLflow using repo requirements" \
             --parameters file://start-mlflow.json \
             --region "${REGION}" >/dev/null
 
-      # 🔍 Step 4: Check if MLflow UI is reachable (optional health check)
       - name: 🔍 Health check MLflow (public UI)
         run: |
           echo "Checking MLflow UI http://35.171.186.148:5000 ..."
           curl -sSf "http://35.171.186.148:5000" >/dev/null && echo "✅ UI reachable" || echo "⚠️ UI not reachable (maybe SG/firewall). Proceeding..."
 
-      # 🚀 Step 5: Clone your repo on EC2 and run training script
       - name: 🚀 Trigger training on EC2 via SSM (clone + train)
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
         run: |
-          set -euo pipefail
           cat > run-train.json <<'JSON'
           {
             "commands": [
-              "set -euxo pipefail",
-              "echo '== whoami ==' ; whoami",
-              "echo '== install git ==' ; sudo yum install -y git",
               "echo '== prepare workspace ==' ; mkdir -p /home/ec2-user && cd /home/ec2-user",
               "echo '== clone fresh repo ==' ; rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
               "cd medical-insurance-ec2",
-              "echo '== list files ==' ; ls -la",
-              "echo '== install deps ==' ; if [ -f requirements.txt ]; then python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt; else python3 -m pip install --upgrade pip && python3 -m pip install pandas scikit-learn mlflow; fi",
+              "echo '== install dependencies ==' ; python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt",
               "echo '== run training ==' ; export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 ; python3 train.py | tee /home/ec2-user/train.log"
             ]
           }
@@ -81,7 +71,7 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "${INSTANCE_ID}" \
-            --comment "Clone repo + run MLflow training" \
+            --comment "Run training using repo code" \
             --parameters file://run-train.json \
             --region "${REGION}" \
             --query "Command.CommandId" --output text)
