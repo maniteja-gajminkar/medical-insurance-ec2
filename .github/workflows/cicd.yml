@@ -26,15 +26,13 @@ jobs:
 
       - name: Install Git & Clone Repo on EC2 via SSM
         run: |
-          cat > clone-and-verify.json << 'JSON'
-          {
+          echo '{
             "commands": [
-              "echo '== Install Git ==' && sudo yum install git -y",
-              "echo '== Clone Repo ==' && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
-              "echo '== List Files ==' && ls -la /home/ec2-user/medical-insurance-ec2"
+              "echo == Install Git == && sudo yum install git -y",
+              "echo == Clone Repo == && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+              "echo == List Files == && ls -la /home/ec2-user/medical-insurance-ec2"
             ]
-          }
-          JSON
+          }' > clone-and-verify.json
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
