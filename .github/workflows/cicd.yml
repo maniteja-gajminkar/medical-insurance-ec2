@@ -6,15 +6,22 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: 🧪 Test repo clone on EC2
+      - name: 🧪 Clone repo on EC2 via SSM
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
