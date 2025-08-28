@@ -1,17 +1,16 @@
-name: EC2 Access Test
+name: MLflow Train Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
-    
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  ssm-ls-check:
+  ml-train:
     runs-on: ubuntu-latest
     env:
       INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
@@ -25,20 +24,31 @@ jobs:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.REGION }}
 
-      - name: Run SSM command to list /home/ec2-user
-        run: |
-          echo "Sending SSM command to EC2 instance: $INSTANCE_ID"
+      - name: Debug EC2 Instance ID
+        run: echo "Targeting EC2 instance: $INSTANCE_ID"
 
+      - name: 🚀 Install deps, start MLflow & train model on EC2
+        run: |
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
-            --comment "List contents of /home/ec2-user" \
-            --parameters "commands=[ 'ls -la /home/ec2-user' ]" \
-            --query "Command.CommandId" \
-            --output text)
+            --comment "MLflow training pipeline" \
+            --parameters 'commands=[
+              "set -euxo pipefail",
+              "sudo yum install -y git python3-pip",
+              "python3 -m pip install --upgrade pip",
+              "rm -rf /home/ec2-user/medical-insurance-ec2",
+              "git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+              "cd /home/ec2-user/medical-insurance-ec2",
+              "python3 -m pip install -r requirements.txt",
+              "if ! ss -lntp | grep -q :5000; then nohup mlflow server --backend-store-uri sqlite:////home/ec2-user/mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > /home/ec2-user/mlflow.log 2>&1 & fi",
+              "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
+              "python3 train.py"
+            ]' \
+            --query "Command.CommandId" --output text)
 
-          echo "Command ID: $CMD_ID"
+          echo "SSM CommandId: $CMD_ID"
 
           aws ssm wait command-executed \
             --command-id "$CMD_ID" \
@@ -49,5 +59,5 @@ jobs:
             --command-id "$CMD_ID" \
             --instance-id "$INSTANCE_ID" \
             --region "$REGION" \
-            --query '{Status:Status, Output:StandardOutputContent, Error:StandardErrorContent}' \
+            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
             --output json
