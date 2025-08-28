@@ -4,7 +4,7 @@ from sklearn.linear_model import LinearRegression
 import pandas as pd
 import numpy as np
 
-# Connect to your MLflow tracking server
+# Connect to MLflow tracking server
 mlflow.set_tracking_uri("http://35.171.186.148:5000")
 mlflow.set_experiment("medical-insurance")
 
