@@ -48,11 +48,3 @@ jobs:
             --query "Command.CommandId" --output text)
 
           echo "SSM CommandId: $CMD_ID"
-          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --region "$REGION"
-
-          echo "----- Repo contents -----"
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' --output json
