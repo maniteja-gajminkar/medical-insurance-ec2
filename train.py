@@ -40,5 +40,5 @@ try:
         print("🔗 View run in MLflow UI:", MLFLOW_URI)
 
 except Exception as e:
-    print("❌ Training failed:", str(e))
+    print("❌ Training is failed:", str(e))
     sys.exit(1)
