@@ -1,4 +1,5 @@
 name: check cli access to s3 bucket
+
 on:
   push:
     branches: [ main ]
@@ -17,8 +18,9 @@ jobs:
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/<GitHubOIDCRoleName>
-          aws-region: us-east-1   # ✅ bucket region
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsOIDCRole
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: us-east-1   # bucket region
 
       - name: Verify caller identity
         run: aws sts get-caller-identity
