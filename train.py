@@ -1,13 +1,15 @@
 import mlflow
+import mlflow.sklearn
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
-import sys
+from mlflow.models.signature import infer_signature
 import os
+import sys
 
 # 🔧 MLflow setup
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://35.171.186.148:5000")
 mlflow.set_tracking_uri(MLFLOW_URI)
 mlflow.set_experiment("medical-insurance")
 
@@ -15,8 +17,13 @@ try:
     print(f"📡 Connecting to MLflow at {MLFLOW_URI}")
 
     # 📂 Load data
-    df = pd.read_csv("raw_data/medical_insurance.csv")
-    X = df.drop("charges", axis=1)
+    data_path = "raw_data/medical_insurance.csv"
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Missing dataset at {data_path}")
+    df = pd.read_csv(data_path)
+
+    # 🧼 Encode categorical features
+    X = pd.get_dummies(df.drop("charges", axis=1), drop_first=True)
     y = df["charges"]
 
     # 🧪 Train/test split
@@ -29,16 +36,23 @@ try:
     # 📊 Evaluation
     predictions = model.predict(X_test)
     rmse = mean_squared_error(y_test, predictions, squared=False)
+    signature = infer_signature(X_test, predictions)
 
     # 📝 MLflow logging
     with mlflow.start_run():
+        mlflow.set_tags({
+            "project": "medical-insurance",
+            "developer": "maniteja",
+            "model_type": "LinearRegression"
+        })
         mlflow.log_param("model_type", "LinearRegression")
         mlflow.log_metric("rmse", rmse)
-        mlflow.log_artifact("raw_data/medical_insurance.csv")
-        mlflow.sklearn.log_model(model, "model")
+        mlflow.log_artifact(data_path)
+        mlflow.sklearn.log_model(model, "model", signature=signature)
+
         print(f"✅ Training complete. RMSE: {rmse:.2f}")
         print("🔗 View run in MLflow UI:", MLFLOW_URI)
 
 except Exception as e:
-    print("❌ Training is failed:", str(e))
+    print("❌ Training failed:", str(e))
     sys.exit(1)
