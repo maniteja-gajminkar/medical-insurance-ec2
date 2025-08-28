@@ -21,7 +21,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: 🚀 Start MLflow server in background
+    - name: 🚀 Start MLflow server on EC2
       run: |
         aws ssm send-command \
           --document-name "AWS-RunShellScript" \
@@ -39,19 +39,18 @@ jobs:
 
     - name: 🔍 Check MLflow server health
       run: |
-        echo "🔍 Checking MLflow server at http://35.171.186.148:5000"
         curl --max-time 10 -sSf "http://35.171.186.148:5000/api/2.0/mlflow/experiments/list" || echo "⚠️ MLflow API not responding"
 
-    - name: 🚀 Trigger training on EC2 via SSM
+    - name: 🧪 Trigger training on EC2 via SSM
       run: |
         aws ssm send-command \
           --document-name "AWS-RunShellScript" \
           --instance-ids i-0ebb50246a4b9c539 \
-          --comment "Trigger MLflow training" \
+          --comment "Run training script" \
           --parameters 'commands=[
             "source /home/ec2-user/mlflow-venv/bin/activate",
+            "pip install -r /home/ec2-user/medical-insurance-ec2/requirements.txt",
             "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
-            "export AWS_REGION=${{ secrets.AWS_REGION }}",
             "cd /home/ec2-user/medical-insurance-ec2",
             "python3 train.py"
           ]' \
