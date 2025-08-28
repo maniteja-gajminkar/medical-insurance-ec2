@@ -21,15 +21,17 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install dependencies
+      - name: Create virtual environment and install dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install -r medical-insurance-ec2/requirements.txt
+          pip install -r requirements.txt
+        working-directory: medical-insurance-ec2
 
       - name: Run training and log to MLflow
         env:
           MLFLOW_TRACKING_URI: http://35.171.186.148:5000
         run: |
           source venv/bin/activate
-          python medical-insurance-ec2/train.py
+          python train.py
+        working-directory: medical-insurance-ec2
