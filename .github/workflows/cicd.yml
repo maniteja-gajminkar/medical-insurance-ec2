@@ -33,8 +33,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Get EC2 IP via SSM
-        id: ip
+      - name: Get EC2 info via SSM
+        id: ec2
         run: |
           INSTANCE_ID=$(aws ssm describe-instance-information \
             --query "InstanceInformationList[0].InstanceId" \
@@ -45,19 +45,30 @@ jobs:
             --query "Reservations[0].Instances[0].PublicIpAddress" \
             --output text)
 
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
           echo "ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+
+      - name: Start MLflow server on EC2 via SSM
+        run: |
+          echo "🚀 Starting MLflow server in background"
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=${{ steps.ec2.outputs.instance_id }}" \
+            --parameters 'commands=["nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &"]' \
+            --comment "Start MLflow server" \
+            --output text
 
       - name: Check MLflow health
         run: |
-          echo "🔍 Checking MLflow server at ${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
-          curl -sSf "http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}/" || echo "⚠️ MLflow server not responding"
+          echo "🔍 Checking MLflow server at ${{ steps.ec2.outputs.ip }}:${{ env.MLFLOW_PORT }}"
+          curl --max-time 10 -sSf "http://${{ steps.ec2.outputs.ip }}:${{ env.MLFLOW_PORT }}/" || echo "⚠️ MLflow server not responding"
 
       - name: Trigger training via SSM
         run: |
           echo "🚀 Triggering training on EC2 via SSM"
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${{ steps.ip.outputs.ip }}" \
+            --targets "Key=instanceIds,Values=${{ steps.ec2.outputs.instance_id }}" \
             --parameters 'commands=["cd /home/ec2-user/medical-insurance-ec2 && python3 train.py"]' \
             --comment "Trigger MLflow training" \
             --output text
