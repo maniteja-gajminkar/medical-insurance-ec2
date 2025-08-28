@@ -8,8 +8,8 @@ from mlflow.models.signature import infer_signature
 import os
 import sys
 
-# 🔧 MLflow setup
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://35.171.186.148:5000")
+# 🔧 Use MLflow URI from environment (injected via GitHub secret)
+MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 mlflow.set_tracking_uri(MLFLOW_URI)
 mlflow.set_experiment("medical-insurance")
 

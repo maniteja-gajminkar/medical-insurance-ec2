@@ -4,71 +4,48 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  INSTANCE_ID: i-0ebb50246a4b9c539
+  MLFLOW_PORT: 5000
 
 jobs:
   deploy-and-train:
     runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      MLFLOW_PORT: 5000
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: 🧾 Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install mlflow pandas scikit-learn
+    - name: 🚀 Start MLflow server in background
+      run: |
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --comment "Start MLflow server" \
+          --parameters 'commands=["nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }} > mlflow.log 2>&1 &"]' \
+          --region ${{ env.AWS_REGION }}
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: 🔍 Check MLflow server health
+      run: |
+        echo "🔍 Checking MLflow server at http://35.171.186.148:${{ env.MLFLOW_PORT }}"
+        curl --max-time 10 -sSf "http://35.171.186.148:${{ env.MLFLOW_PORT }}" || echo "⚠️ MLflow server not responding"
 
-      - name: Get EC2 info via SSM
-        id: ec2
-        run: |
-          INSTANCE_ID=$(aws ssm describe-instance-information \
-            --query "InstanceInformationList[0].InstanceId" \
-            --output text)
-
-          PUBLIC_IP=$(aws ec2 describe-instances \
-            --instance-ids "$INSTANCE_ID" \
-            --query "Reservations[0].Instances[0].PublicIpAddress" \
-            --output text)
-
-          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
-          echo "ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
-
-      - name: Start MLflow server on EC2 via SSM
-        run: |
-          echo "🚀 Starting MLflow server in background"
-          aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${{ steps.ec2.outputs.instance_id }}" \
-            --parameters 'commands=["nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &"]' \
-            --comment "Start MLflow server" \
-            --output text
-
-      - name: Check MLflow health
-        run: |
-          echo "🔍 Checking MLflow server at ${{ steps.ec2.outputs.ip }}:${{ env.MLFLOW_PORT }}"
-          curl --max-time 10 -sSf "http://${{ steps.ec2.outputs.ip }}:${{ env.MLFLOW_PORT }}/" || echo "⚠️ MLflow server not responding"
-
-      - name: Trigger training via SSM
-        run: |
-          echo "🚀 Triggering training on EC2 via SSM"
-          aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${{ steps.ec2.outputs.instance_id }}" \
-            --parameters 'commands=["cd /home/ec2-user/medical-insurance-ec2 && python3 train.py"]' \
-            --comment "Trigger MLflow training" \
-            --output text
+    - name: 🚀 Trigger training on EC2 via SSM
+      run: |
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --comment "Trigger MLflow training" \
+          --parameters 'commands=["export MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }} && cd /home/ec2-user/medical-insurance-ec2 && python3 train.py"]' \
+          --region ${{ env.AWS_REGION }}
