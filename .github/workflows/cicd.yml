@@ -18,8 +18,11 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Debug EC2 Instance ID
+        run: echo "Targeting EC2: ${{ secrets.EC2_INSTANCE_ID }}"
 
       - name: Install Git & Clone Repo on EC2 via SSM
         run: |
@@ -35,7 +38,7 @@ jobs:
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --parameters file://clone-and-verify.json \
             --region ${{ secrets.AWS_REGION }} \
             --comment "Install Git and clone repo"
