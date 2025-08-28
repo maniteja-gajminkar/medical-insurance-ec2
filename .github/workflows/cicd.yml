@@ -14,7 +14,7 @@ jobs:
     - name: 🧾 Checkout repository
       uses: actions/checkout@v3
 
-    - name: Configure AWS credentials
+    - name: 🔐 Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -27,13 +27,20 @@ jobs:
           --document-name "AWS-RunShellScript" \
           --instance-ids i-0ebb50246a4b9c539 \
           --comment "Start MLflow server" \
-          --parameters 'commands=["nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts-maniteja --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &"]' \
+          --parameters 'commands=[
+            "source /home/ec2-user/mlflow-venv/bin/activate",
+            "nohup /home/ec2-user/mlflow-venv/bin/mlflow server \
+              --backend-store-uri sqlite:///home/ec2-user/mlflow.db \
+              --default-artifact-root s3://mlflow-artifacts-maniteja \
+              --host 0.0.0.0 \
+              --port 5000 > /home/ec2-user/mlflow.log 2>&1 &"
+          ]' \
           --region ${{ secrets.AWS_REGION }}
 
     - name: 🔍 Check MLflow server health
       run: |
         echo "🔍 Checking MLflow server at http://35.171.186.148:5000"
-        curl --max-time 10 -sSf "http://35.171.186.148:5000" || echo "⚠️ MLflow server not responding"
+        curl --max-time 10 -sSf "http://35.171.186.148:5000/api/2.0/mlflow/experiments/list" || echo "⚠️ MLflow API not responding"
 
     - name: 🚀 Trigger training on EC2 via SSM
       run: |
@@ -41,5 +48,11 @@ jobs:
           --document-name "AWS-RunShellScript" \
           --instance-ids i-0ebb50246a4b9c539 \
           --comment "Trigger MLflow training" \
-          --parameters 'commands=["export MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }} && cd /home/ec2-user/medical-insurance-ec2 && python3 train.py"]' \
+          --parameters 'commands=[
+            "source /home/ec2-user/mlflow-venv/bin/activate",
+            "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
+            "export AWS_REGION=${{ secrets.AWS_REGION }}",
+            "cd /home/ec2-user/medical-insurance-ec2",
+            "python3 train.py"
+          ]' \
           --region ${{ secrets.AWS_REGION }}
