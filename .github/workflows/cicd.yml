@@ -13,6 +13,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
+          aws-region: us-east-1
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -33,3 +39,6 @@ jobs:
         run: |
           source venv/bin/activate
           python train.py
+
+      - name: Verify AWS identity (optional debug)
+        run: aws sts get-caller-identity
