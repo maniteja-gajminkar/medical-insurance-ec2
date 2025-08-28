@@ -11,8 +11,8 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  INSTANCE_ID: i-0ebb50246a4b9c539         # <-- your EC2 instance ID
-  BUCKET_NAME: mlflow-artifacts-maniteja    # <-- your S3 bucket
+  INSTANCE_ID: i-0ebb50246a4b9c539
+  BUCKET_NAME: mlflow-artifacts-maniteja
   MLFLOW_PORT: "5000"
 
 jobs:
@@ -30,34 +30,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: gha-mlflow-ssm-${{ github.run_id }}
 
-      # ---------- BOOTSTRAP MLflow ON EC2 VIA SSM ----------
       - name: Build SSM parameter JSON (commands)
         run: |
-          cat > commands.json <<JSON
+          cat > commands.json <<EOF
           {
             "commands": [
               "set -euo pipefail",
-              # Ensure Python & CLI (yum is an alias to dnf on AL2023)
               "sudo yum update -y",
               "sudo yum install -y python3 python3-pip awscli",
-              # Create a virtual environment for MLflow (avoid system pip)
               "sudo -u ec2-user python3 -m venv /home/ec2-user/mlflow-venv",
               "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install --upgrade pip setuptools wheel",
               "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install mlflow boto3",
-              # Working dir for the SQLite DB & logs
               "sudo mkdir -p /home/ec2-user/mlflow",
               "sudo chown ec2-user:ec2-user /home/ec2-user/mlflow",
-              # Systemd service using the venv's mlflow binary
-              "sudo bash -lc 'cat >/etc/systemd/system/mlflow.service <<EOF\n[Unit]\nDescription=MLflow Tracking Server\nAfter=network.target\n\n[Service]\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/mlflow\nExecStart=/home/ec2-user/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://${{ env.BUCKET_NAME }} --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }}\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOF'",
+              "sudo bash -lc 'cat >/etc/systemd/system/mlflow.service <<EOL\n[Unit]\nDescription=MLflow Tracking Server\nAfter=network.target\n\n[Service]\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/mlflow\nExecStart=/home/ec2-user/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://${{ env.BUCKET_NAME }} --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }}\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOL'",
               "sudo systemctl daemon-reload",
               "sudo systemctl enable --now mlflow",
               "sudo systemctl status mlflow --no-pager || true"
             ]
           }
-          JSON
+          EOF
           echo "Built SSM commands.json:"
           cat commands.json
-
 
       - name: Send SSM command to EC2
         id: ssm
@@ -101,7 +95,6 @@ jobs:
           echo "MLFLOW_TRACKING_URI=http://$IP:${{ env.MLFLOW_PORT }}" >> $GITHUB_ENV
           echo "MLflow UI => http://$IP:${{ env.MLFLOW_PORT }}"
 
-      # ---------- TRAIN ----------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -128,6 +121,5 @@ jobs:
           python train.py
 
       - name: Show MLflow URL
-        #run: echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
-        run: 'echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"'
-
+        run: |
+          echo "Opening MLflow UI: http://${{ steps.ip.outputs.ip }}:${{ env.MLFLOW_PORT }}"
