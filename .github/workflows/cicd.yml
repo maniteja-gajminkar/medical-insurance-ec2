@@ -21,7 +21,7 @@ jobs:
           role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: 🧪 Clone repo on EC2 via SSM
+      - name: 🧪 Install Git & Clone Repo on EC2 via SSM
         env:
           INSTANCE_ID: i-0ebb50246a4b9c539
           REGION: ${{ secrets.AWS_REGION }}
@@ -29,6 +29,8 @@ jobs:
           cat > test-clone.json <<'JSON'
           {
             "commands": [
+              "echo '== update packages ==' && sudo yum update -y || sudo apt-get update -y",
+              "echo '== install git ==' && sudo yum install git -y || sudo apt-get install git -y",
               "echo '== prepare workspace ==' && mkdir -p /home/ec2-user && cd /home/ec2-user",
               "echo '== clone fresh repo ==' && rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
               "cd medical-insurance-ec2",
@@ -40,7 +42,7 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
-            --comment "Test repo clone and file listing" \
+            --comment "Install Git and clone repo" \
             --parameters file://test-clone.json \
             --region "$REGION" \
             --query "Command.CommandId" --output text)
