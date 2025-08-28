@@ -7,5 +7,3 @@ requests
 fastapi
 boto3
 uvicorn
-git
-pip
