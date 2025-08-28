@@ -37,7 +37,7 @@ jobs:
           ]' \
           --region ${{ secrets.AWS_REGION }}
 
-    - name: 🔍 Check MLflow server health
+    - name: 🔍 Check MLflow API health
       run: |
         curl --max-time 10 -sSf "http://35.171.186.148:5000/api/2.0/mlflow/experiments/list" || echo "⚠️ MLflow API not responding"
 
