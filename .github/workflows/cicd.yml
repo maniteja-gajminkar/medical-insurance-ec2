@@ -1,133 +1,32 @@
-name: EC2 Access Test
+name: Train and Log to MLflow
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
 
 jobs:
-  ssm-ec2-check:
+  train-model:
     runs-on: ubuntu-latest
-    env:
-      INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
-      REGION: ${{ secrets.AWS_REGION }}
-      ROLE: ${{ secrets.AWS_ROLE_TO_ASSUME }}
 
     steps:
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.REGION }}
+          python-version: '3.9'
 
-      - name: Run SSM command to list /home/ec2-user
+      - name: Install dependencies
         run: |
-          echo "Sending SSM command to EC2 instance: $INSTANCE_ID"
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r medical-insurance-ec2/requirements.txt
 
-          CMD_ID=$(aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "$INSTANCE_ID" \
-            --region "$REGION" \
-            --comment "List contents of /home/ec2-user" \
-            --parameters '{"commands":["ls -la /home/ec2-user"]}' \
-            --timeout-seconds 60 \
-            --query "Command.CommandId" \
-            --output text)
-
-          echo "Command ID: $CMD_ID"
-
-          aws ssm wait command-executed \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION"
-
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query '{Status:Status, Output:StandardOutputContent, Error:StandardErrorContent}' \
-            --output json
-
-      - name: Fresh clone repo on EC2 via SSM
+      - name: Run training and log to MLflow
+        env:
+          MLFLOW_TRACKING_URI: http://35.171.186.148:5000
         run: |
-          echo "Fresh cloning repo on instance: $INSTANCE_ID"
-
-          CMD_ID=$(aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "$INSTANCE_ID" \
-            --region "$REGION" \
-            --comment "Fresh clone medical insurance repo" \
-            --parameters '{
-              "commands": [
-                "set -euxo pipefail",
-                "echo \"::step:: Installing git...\"",
-                "if command -v dnf >/dev/null 2>&1; then sudo dnf install -y git ca-certificates || true; else sudo yum install -y git ca-certificates || true; fi",
-                "update-ca-trust || true",
-                "echo \"::step:: Cloning repo...\"",
-                "rm -rf /home/ec2-user/medical-insurance-ec2",
-                "git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
-                "echo \"::step:: Repo cloned. Listing contents:\"",
-                "ls -la /home/ec2-user/medical-insurance-ec2"
-              ]
-            }' \
-            --timeout-seconds 120 \
-            --query "Command.CommandId" \
-            --output text)
-
-          echo "Command ID: $CMD_ID"
-
-          aws ssm wait command-executed \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" || echo "Waiter timed out or failed"
-
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
-            --output json
-
-      - name: Install requirements and train model via SSM
-        run: |
-          echo "Installing dependencies and training model on instance: $INSTANCE_ID"
-
-          CMD_ID=$(aws ssm send-command \
-            --document-name "AWS-RunShellScript" \
-            --instance-ids "$INSTANCE_ID" \
-            --region "$REGION" \
-            --comment "Install requirements and train ML model" \
-            --parameters '{
-              "commands": [
-                "set -euxo pipefail",
-                "echo \"::step:: Activating virtualenv...\"",
-                "source /home/ec2-user/mlflow-venv/bin/activate",
-                "echo \"::step:: Installing requirements...\"",
-                "pip install --upgrade pip",
-                "pip install -r /home/ec2-user/medical-insurance-ec2/requirements.txt",
-                "echo \"::step:: Running training script...\"",
-                "python /home/ec2-user/medical-insurance-ec2/train.py"
-              ]
-            }' \
-            --timeout-seconds 180 \
-            --query "Command.CommandId" \
-            --output text)
-
-          echo "Command ID: $CMD_ID"
-
-          aws ssm wait command-executed \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" || echo "Training step timed out or failed"
-
-          aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
-            --output json
+          source venv/bin/activate
+          python medical-insurance-ec2/train.py
