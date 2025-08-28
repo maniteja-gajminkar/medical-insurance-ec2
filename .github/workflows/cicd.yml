@@ -15,36 +15,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: 🧪 Install Git & Clone Repo on EC2 via SSM
-        env:
-          INSTANCE_ID: i-0ebb50246a4b9c539
-          REGION: ${{ secrets.AWS_REGION }}
+      - name: Install Git & Clone Repo on EC2 via SSM
         run: |
-          cat > test-clone.json <<'JSON'
+          cat > clone-and-verify.json << 'JSON'
           {
             "commands": [
-              "echo '== update packages ==' && sudo yum update -y || sudo apt-get update -y",
-              "echo '== install git ==' && sudo yum install git -y || sudo apt-get install git -y",
-              "echo '== prepare workspace ==' && mkdir -p /home/ec2-user && cd /home/ec2-user",
-              "echo '== clone fresh repo ==' && rm -rf medical-insurance-ec2 && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git",
-              "cd medical-insurance-ec2",
-              "echo '== list files ==' && ls -la"
+              "echo '== Install Git ==' && sudo yum install git -y",
+              "echo '== Clone Repo ==' && git clone https://github.com/maniteja-gajminkar/medical-insurance-ec2.git /home/ec2-user/medical-insurance-ec2",
+              "echo '== List Files ==' && ls -la /home/ec2-user/medical-insurance-ec2"
             ]
           }
           JSON
 
-          CMD_ID=$(aws ssm send-command \
+          aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --instance-ids "$INSTANCE_ID" \
-            --comment "Install Git and clone repo" \
-            --parameters file://test-clone.json \
-            --region "$REGION" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM CommandId: $CMD_ID"
+            --targets "Key=instanceIds,Values=${{ secrets.EC2_INSTANCE_ID }}" \
+            --parameters file://clone-and-verify.json \
+            --region ${{ secrets.AWS_REGION }} \
+            --comment "Install Git and clone repo"
