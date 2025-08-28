@@ -1,9 +1,6 @@
-name: CI/CD Pipeline
+name: EC2 Access Test
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -11,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  ssm-ls-check:
     runs-on: ubuntu-latest
     env:
       INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
@@ -25,20 +22,20 @@ jobs:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.REGION }}
 
-      - name: Debug EC2 Instance ID
-        run: echo "Targeting EC2 instance: $INSTANCE_ID"
-
-      - name: Check /home/ec2-user on EC2 via SSM
+      - name: Run SSM command to list /home/ec2-user
         run: |
+          echo "Sending SSM command to EC2 instance: $INSTANCE_ID"
+
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
             --region "$REGION" \
-            --comment "List /home/ec2-user" \
-            --parameters commands="cd /home/ec2-user && ls -la" \
-            --query "Command.CommandId" --output text)
+            --comment "List contents of /home/ec2-user" \
+            --parameters "commands=[ 'ls -la /home/ec2-user' ]" \
+            --query "Command.CommandId" \
+            --output text)
 
-          echo "SSM CommandId: $CMD_ID"
+          echo "Command ID: $CMD_ID"
 
           aws ssm wait command-executed \
             --command-id "$CMD_ID" \
@@ -49,5 +46,5 @@ jobs:
             --command-id "$CMD_ID" \
             --instance-id "$INSTANCE_ID" \
             --region "$REGION" \
-            --query '{Status:Status, StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}' \
+            --query '{Status:Status, Output:StandardOutputContent, Error:StandardErrorContent}' \
             --output json
