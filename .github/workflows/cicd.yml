@@ -30,7 +30,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: gha-mlflow-ssm-${{ github.run_id }}
 
-      - name: Build SSM parameter JSON (commands)
+      - name: Build SSM parameter JSON (idempotent bootstrap)
         run: |
           cat > commands.json <<EOF
           {
@@ -38,20 +38,17 @@ jobs:
               "set -euo pipefail",
               "sudo yum update -y",
               "sudo yum install -y python3 python3-pip awscli",
-              "sudo -u ec2-user python3 -m venv /home/ec2-user/mlflow-venv",
+              "if [ ! -d /home/ec2-user/mlflow-venv ]; then sudo -u ec2-user python3 -m venv /home/ec2-user/mlflow-venv; fi",
               "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install --upgrade pip setuptools wheel",
               "sudo -u ec2-user /home/ec2-user/mlflow-venv/bin/pip install mlflow boto3",
               "sudo mkdir -p /home/ec2-user/mlflow",
               "sudo chown ec2-user:ec2-user /home/ec2-user/mlflow",
-              "sudo bash -lc 'cat >/etc/systemd/system/mlflow.service <<EOL\n[Unit]\nDescription=MLflow Tracking Server\nAfter=network.target\n\n[Service]\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/mlflow\nExecStart=/home/ec2-user/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://${{ env.BUCKET_NAME }} --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }}\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOL'",
-              "sudo systemctl daemon-reload",
-              "sudo systemctl enable --now mlflow",
+              "if [ ! -f /etc/systemd/system/mlflow.service ]; then sudo bash -lc 'cat >/etc/systemd/system/mlflow.service <<EOL\n[Unit]\nDescription=MLflow Tracking Server\nAfter=network.target\n\n[Service]\nUser=ec2-user\nWorkingDirectory=/home/ec2-user/mlflow\nExecStart=/home/ec2-user/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://${{ env.BUCKET_NAME }} --host 0.0.0.0 --port ${{ env.MLFLOW_PORT }}\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOL'; sudo systemctl daemon-reload; sudo systemctl enable mlflow; fi",
+              "sudo systemctl restart mlflow",
               "sudo systemctl status mlflow --no-pager || true"
             ]
           }
           EOF
-          echo "Built SSM commands.json:"
-          cat commands.json
 
       - name: Send SSM command to EC2
         id: ssm
@@ -63,7 +60,6 @@ jobs:
             --parameters file://commands.json \
             --query "Command.CommandId" --output text)
           echo "cmd_id=$CMD_ID" >> $GITHUB_OUTPUT
-          echo "Sent SSM CommandId: $CMD_ID"
 
       - name: Wait for SSM command completion
         run: |
@@ -88,12 +84,8 @@ jobs:
           IP=$(aws ec2 describe-instances --region "${{ env.AWS_REGION }}" \
             --instance-ids "${{ env.INSTANCE_ID }}" \
             --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
-          if [ -z "$IP" ] || [ "$IP" = "None" ]; then
-            echo "No public IP found on instance ${{ env.INSTANCE_ID }}" && exit 1
-          fi
           echo "ip=$IP" >> $GITHUB_OUTPUT
           echo "MLFLOW_TRACKING_URI=http://$IP:${{ env.MLFLOW_PORT }}" >> $GITHUB_ENV
-          echo "MLflow UI => http://$IP:${{ env.MLFLOW_PORT }}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
