@@ -5,10 +5,11 @@ from mlflow.tracking import MlflowClient
 from mlflow.pyfunc import load_model
 import logging
 import os
+import pandas as pd
 
 app = FastAPI()
 
-# 🔧 Config from environment
+# 🔧 Environment config
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MODEL_NAME = os.getenv("MODEL_NAME", "medical-insurance")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
@@ -24,7 +25,6 @@ def check_model_status():
             model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
             model_status = "ready"
         else:
-            # Try promoting latest version if none in Production
             all_versions = client.get_latest_versions(name=MODEL_NAME)
             if all_versions:
                 latest_version = all_versions[0].version
@@ -71,9 +71,9 @@ def predict(input_data: InsuranceInput):
 
     try:
         model = load_model(model_uri)
-        input_df = input_data.dict()
-        prediction = model.predict([input_df])
-        return {"prediction": prediction[0]}
+        input_df = pd.DataFrame([input_data.dict()])
+        prediction = model.predict(input_df)[0]
+        return {"prediction": round(prediction, 2)}
     except Exception as e:
         logging.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail="Prediction failed")
