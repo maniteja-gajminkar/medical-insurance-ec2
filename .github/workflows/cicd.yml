@@ -20,9 +20,9 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
           role-session-name: github-actions-session
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,13 +35,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run training script
-        env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: python train.py
 
       - name: Upload artifact to S3
         run: |
-          aws s3 cp ./artifacts/model.pkl s3://mlflow-artifacts-maniteja/artifacts/model-${{ github.sha }}.pkl
+          aws s3 cp ./artifacts/model.pkl s3://mlflow-artifacts-maniteja/artifacts/model.pkl
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2

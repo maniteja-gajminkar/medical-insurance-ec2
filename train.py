@@ -8,15 +8,11 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from mlflow.tracking import MlflowClient
-from dagshub import dagshub_logger
 import os
 import pickle
 
-# 🔐 Load DagsHub token from environment
-dagshub_token = os.getenv("DAGSHUB_TOKEN")
-
-# 🔧 MLflow config — DagsHub tracking URI
-mlflow.set_tracking_uri("https://dagshub.com/maniteja-gajminkar/ml-insurance.mlflow")
+# 🔧 MLflow config
+mlflow.set_tracking_uri("http://35.171.186.148:5000")
 mlflow.set_experiment("medical-insurance")
 
 # 📥 Load dataset
@@ -50,14 +46,8 @@ with mlflow.start_run() as run:
 
     # ✅ Log model
     mlflow.log_param("model_type", "LinearRegression")
-    r2 = pipeline.score(X_test, y_test)
-    mlflow.log_metric("r2_score", r2)
+    mlflow.log_metric("r2_score", pipeline.score(X_test, y_test))
     mlflow.sklearn.log_model(pipeline, artifact_path="model", input_example=X.iloc[:1])
-
-    # 📡 DagsHub logging
-    with dagshub_logger() as logger:
-        logger.log_hyperparams({"model_type": "LinearRegression"})
-        logger.log_metrics({"r2_score": r2})
 
     # 📦 Register model
     model_uri = f"runs:/{run.info.run_id}/model"
