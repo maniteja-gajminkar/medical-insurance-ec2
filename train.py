@@ -9,15 +9,13 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from mlflow.tracking import MlflowClient
 from dagshub import dagshub_logger
-from dotenv import load_dotenv
 import os
 import pickle
 
-# 🔐 Load environment variables
-load_dotenv()
+# 🔐 Load DagsHub token from environment
 dagshub_token = os.getenv("DAGSHUB_TOKEN")
 
-# 🔧 MLflow config (DagsHub URI)
+# 🔧 MLflow config — DagsHub tracking URI
 mlflow.set_tracking_uri("https://dagshub.com/maniteja-gajminkar/ml-insurance.mlflow")
 mlflow.set_experiment("medical-insurance")
 

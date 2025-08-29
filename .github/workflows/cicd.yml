@@ -20,9 +20,9 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::274363548500:role/githubactions-s3oidcrole
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: github-actions-session
-          aws-region: us-east-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
