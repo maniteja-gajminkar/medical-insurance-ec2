@@ -8,12 +8,16 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from mlflow.tracking import MlflowClient
+from dagshub import dagshub_logger
 import os
 import pickle
 
 # 🔧 MLflow config
 mlflow.set_tracking_uri("http://35.171.186.148:5000")
 mlflow.set_experiment("medical-insurance")
+
+# 📡 DagsHub logger
+dagshub_logger.init(repo_name="ml-insurance", repo_owner="maniteja-gajminkar")
 
 # 📥 Load dataset
 df = pd.read_csv("raw_data/medical_insurance.csv")
