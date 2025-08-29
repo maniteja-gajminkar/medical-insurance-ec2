@@ -23,8 +23,20 @@ def check_model_status():
             model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
             model_status = "ready"
         else:
-            model_uri = None
-            model_status = "not found"
+            # Try to promote latest version if none in Production
+            all_versions = client.get_latest_versions(name=MODEL_NAME)
+            if all_versions:
+                latest_version = all_versions[0].version
+                client.transition_model_version_stage(
+                    name=MODEL_NAME,
+                    version=latest_version,
+                    stage=MODEL_STAGE
+                )
+                model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
+                model_status = "promoted"
+            else:
+                model_uri = None
+                model_status = "not found"
     except Exception as e:
         logging.error(f"Error querying MLflow: {e}")
         model_uri = None
@@ -53,7 +65,7 @@ class InsuranceInput(BaseModel):
 @app.post("/predict")
 def predict(input_data: InsuranceInput):
     model_uri, model_status = check_model_status()
-    if model_status != "ready":
+    if model_status not in ["ready", "promoted"]:
         raise HTTPException(status_code=503, detail="Model not available")
 
     try:
