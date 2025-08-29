@@ -1,52 +1,66 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import mlflow
-from mlflow.exceptions import RestException
+from mlflow.tracking import MlflowClient
+from mlflow.pyfunc import load_model
 import logging
 
 app = FastAPI()
 
-# 🔧 Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# 🌐 MLflow model registry config
+# 🔧 Configuration
+MLFLOW_TRACKING_URI = "http://35.171.186.148:5000"
 MODEL_NAME = "medical-insurance"
 MODEL_STAGE = "Production"
-model = None
-model_status = "not found"
 
-# 🚀 Try to load the registered model
-try:
-    model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
-    model = mlflow.pyfunc.load_model(model_uri)
-    model_status = "loaded"
-    logger.info(f"✅ Loaded model from {model_uri}")
-except RestException as e:
-    logger.warning(f"⚠️ Model not found: {e}")
-except Exception as e:
-    logger.error(f"🔥 Unexpected error loading model: {e}")
+# 🧠 Initialize MLflow client
+client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
 
-# 🩺 Health check endpoint
+# 🩺 Health check logic
+def check_model_status():
+    try:
+        latest_versions = client.get_latest_versions(name=MODEL_NAME, stages=[MODEL_STAGE])
+        if latest_versions:
+            model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
+            model_status = "ready"
+        else:
+            model_uri = None
+            model_status = "not found"
+    except Exception as e:
+        logging.error(f"Error querying MLflow: {e}")
+        model_uri = None
+        model_status = "error"
+    return model_uri, model_status
+
 @app.get("/health")
-def health_check():
+def health():
+    model_uri, model_status = check_model_status()
     return {
-        "mlflow_tracking_uri": mlflow.get_tracking_uri(),
+        "mlflow_tracking_uri": MLFLOW_TRACKING_URI,
         "model_name": MODEL_NAME,
         "model_stage": MODEL_STAGE,
         "model_status": model_status
     }
 
-# 🔮 Optional: Predict endpoint (ready for extension)
+# 🧾 Define input schema
+class InsuranceInput(BaseModel):
+    age: int
+    sex: str
+    bmi: float
+    children: int
+    smoker: str
+    region: str
+
 @app.post("/predict")
-async def predict(request: Request):
-    if model is None:
-        return {"error": "Model not loaded"}
-    
+def predict(input_data: InsuranceInput):
+    model_uri, model_status = check_model_status()
+    if model_status != "ready":
+        raise HTTPException(status_code=503, detail="Model not available")
+
     try:
-        payload = await request.json()
-        input_data = [list(payload.values())]
-        prediction = model.predict(input_data)
+        model = load_model(model_uri)
+        input_df = input_data.dict()
+        prediction = model.predict([input_df])
         return {"prediction": prediction[0]}
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        return {"error": str(e)}
+        logging.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail="Prediction failed")
