@@ -12,3 +12,5 @@ python-dotenv    # For managing environment variables (e.g., MLflow URI, S3 buck
 gunicorn         # For serving FastAPI in production (instead of uvicorn directly)
 dagshub
 python-dotenv
+mlflow<3
+
