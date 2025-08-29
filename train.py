@@ -16,7 +16,7 @@ mlflow.set_tracking_uri("http://35.171.186.148:5000")
 mlflow.set_experiment("medical-insurance")
 
 # 📥 Load dataset
-df = pd.read_csv("data/medical_insurance.csv")
+df = pd.read_csv("raw_data/medical_insurance.csv")
 
 # 🎯 Features and target
 X = df.drop("charges", axis=1)
