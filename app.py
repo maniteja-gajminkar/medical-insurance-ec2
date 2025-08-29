@@ -4,15 +4,16 @@ import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.pyfunc import load_model
 import logging
+import os
 
 app = FastAPI()
 
-# 🔧 Configuration
-MLFLOW_TRACKING_URI = "http://35.171.186.148:5000"
-MODEL_NAME = "medical-insurance"
-MODEL_STAGE = "Production"
+# 🔧 Config from environment
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MODEL_NAME = os.getenv("MODEL_NAME", "medical-insurance")
+MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
 
-# 🧠 Initialize MLflow client
+# 🧠 MLflow client
 client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
 
 # 🩺 Health check logic
@@ -23,7 +24,7 @@ def check_model_status():
             model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
             model_status = "ready"
         else:
-            # Try to promote latest version if none in Production
+            # Try promoting latest version if none in Production
             all_versions = client.get_latest_versions(name=MODEL_NAME)
             if all_versions:
                 latest_version = all_versions[0].version
@@ -38,7 +39,7 @@ def check_model_status():
                 model_uri = None
                 model_status = "not found"
     except Exception as e:
-        logging.error(f"Error querying MLflow: {e}")
+        logging.error(f"MLflow error: {e}")
         model_uri = None
         model_status = "error"
     return model_uri, model_status
@@ -53,7 +54,7 @@ def health():
         "model_status": model_status
     }
 
-# 🧾 Define input schema
+# 🧾 Input schema
 class InsuranceInput(BaseModel):
     age: int
     sex: str
