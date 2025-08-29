@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app code
 COPY . .
 
-# Set environment variables for MLflow and AWS
+# Set environment variables for MLflow and AWS S3
 ENV MLFLOW_TRACKING_URI=http://35.171.186.148:5000
 ENV AWS_REGION=us-east-1
 ENV MLFLOW_S3_ENDPOINT_URL=https://s3.amazonaws.com
