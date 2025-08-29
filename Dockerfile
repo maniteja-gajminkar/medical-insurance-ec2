@@ -19,5 +19,5 @@ ENV MLFLOW_S3_ENDPOINT_URL=https://s3.amazonaws.com
 # Optional: expose port if serving via FastAPI or Streamlit later
 EXPOSE 8000
 
-# Default command to run trainings
+# Default command to run training
 CMD ["python", "train.py"]
