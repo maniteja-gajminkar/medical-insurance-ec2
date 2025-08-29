@@ -46,29 +46,31 @@ pipeline = Pipeline([
 # 📊 Train/test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 🚀 Start MLflow + DagsHub run
-with dagshub_logger(repo_name="ml-insurance", repo_owner="maniteja-gajminkar"):
-    with mlflow.start_run() as run:
-        pipeline.fit(X_train, y_train)
+# 📡 Enable DagsHub logging
+dagshub_logger()
 
-        # ✅ Log model
-        mlflow.log_param("model_type", "LinearRegression")
-        mlflow.log_metric("r2_score", pipeline.score(X_test, y_test))
-        mlflow.sklearn.log_model(pipeline, artifact_path="model", input_example=X.iloc[:1])
+# 🚀 Start MLflow run
+with mlflow.start_run() as run:
+    pipeline.fit(X_train, y_train)
 
-        # 📦 Register model
-        model_uri = f"runs:/{run.info.run_id}/model"
-        result = mlflow.register_model(model_uri=model_uri, name="medical-insurance")
+    # ✅ Log model
+    mlflow.log_param("model_type", "LinearRegression")
+    mlflow.log_metric("r2_score", pipeline.score(X_test, y_test))
+    mlflow.sklearn.log_model(pipeline, artifact_path="model", input_example=X.iloc[:1])
 
-        # 🚦 Promote to Production
-        client = MlflowClient()
-        client.transition_model_version_stage(
-            name="medical-insurance",
-            version=result.version,
-            stage="Production"
-        )
+    # 📦 Register model
+    model_uri = f"runs:/{run.info.run_id}/model"
+    result = mlflow.register_model(model_uri=model_uri, name="medical-insurance")
 
-        print(f"✅ Registered and promoted model: {result.name} v{result.version}")
+    # 🚦 Promote to Production
+    client = MlflowClient()
+    client.transition_model_version_stage(
+        name="medical-insurance",
+        version=result.version,
+        stage="Production"
+    )
+
+    print(f"✅ Registered and promoted model: {result.name} v{result.version}")
 
 # 💾 Save locally for S3 upload
 os.makedirs("artifacts", exist_ok=True)
