@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 import pickle
+from mlflow.tracking import MlflowClient
 
 # Connect to MLflow tracking server
 mlflow.set_tracking_uri("http://35.171.186.148:5000")
@@ -15,7 +16,7 @@ X = pd.DataFrame({'age': [25, 32, 47], 'bmi': [22.0, 28.5, 31.2]})
 y = np.array([2500, 3200, 4100])
 
 # Start MLflow run
-with mlflow.start_run():
+with mlflow.start_run() as run:
     model = LinearRegression()
     model.fit(X, y)
 
@@ -30,7 +31,24 @@ with mlflow.start_run():
         input_example=X.iloc[:1]
     )
 
-    # Save model locally for GitHub Actions to upload to S3
-    os.makedirs("artifacts", exist_ok=True)
-    with open("artifacts/model.pkl", "wb") as f:
-        pickle.dump(model, f)
+    # Register the model in MLflow Model Registry
+    model_uri = f"runs:/{run.info.run_id}/model"
+    result = mlflow.register_model(
+        model_uri=model_uri,
+        name="medical-insurance"
+    )
+
+    # Promote to Production (optional)
+    client = MlflowClient()
+    client.transition_model_version_stage(
+        name="medical-insurance",
+        version=result.version,
+        stage="Production"
+    )
+
+    print(f"✅ Registered and promoted model: {result.name} v{result.version}")
+
+# Save model locally for GitHub Actions to upload to S3
+os.makedirs("artifacts", exist_ok=True)
+with open("artifacts/model.pkl", "wb") as f:
+    pickle.dump(model, f)
