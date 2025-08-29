@@ -17,8 +17,8 @@ import pickle
 load_dotenv()
 dagshub_token = os.getenv("DAGSHUB_TOKEN")
 
-# 🔧 MLflow config
-mlflow.set_tracking_uri("http://35.171.186.148:5000")
+# 🔧 MLflow config (DagsHub URI)
+mlflow.set_tracking_uri("https://dagshub.com/maniteja-gajminkar/ml-insurance.mlflow")
 mlflow.set_experiment("medical-insurance")
 
 # 📥 Load dataset
@@ -46,17 +46,20 @@ pipeline = Pipeline([
 # 📊 Train/test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 📡 Enable DagsHub logging
-dagshub_logger()
-
 # 🚀 Start MLflow run
 with mlflow.start_run() as run:
     pipeline.fit(X_train, y_train)
 
     # ✅ Log model
     mlflow.log_param("model_type", "LinearRegression")
-    mlflow.log_metric("r2_score", pipeline.score(X_test, y_test))
+    r2 = pipeline.score(X_test, y_test)
+    mlflow.log_metric("r2_score", r2)
     mlflow.sklearn.log_model(pipeline, artifact_path="model", input_example=X.iloc[:1])
+
+    # 📡 DagsHub logging
+    with dagshub_logger() as logger:
+        logger.log_hyperparams({"model_type": "LinearRegression"})
+        logger.log_metrics({"r2_score": r2})
 
     # 📦 Register model
     model_uri = f"runs:/{run.info.run_id}/model"
